@@ -1,4 +1,4 @@
-# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL COM PDF EMBUTIDO) ---
+# --- APLICATIVO GERADOR DE DARF (V8 - PARSER DE NÚMEROS APRIMORADO) ---
 
 import streamlit as st
 import pandas as pd
@@ -8,17 +8,38 @@ import re
 import os
 import shutil
 
-# --- FUNÇÕES AUXILIARES (sem alterações) ---
+# --- FUNÇÕES AUXILIARES ROBUSTAS ---
+
 def parse_value_to_float(value):
+    """
+    Função aprimorada para converter de forma robusta diferentes formatos de
+    string ou número para float. Lida com formatos pt-br e en-us.
+    """
     if pd.isna(value): return 0.0
+    
     s = str(value).strip()
-    dots = s.count('.'); commas = s.count(',')
-    if dots >= 1 and commas == 1: s = s.replace('.', '').replace(',', '.')
-    elif commas >= 1: s = s.replace(',', '')
-    try: return float(s)
-    except (ValueError, TypeError): return 0.0
+    # Se for um número simples sem separadores, não faz nada
+    if re.fullmatch(r'^-?\d+(\.\d+)?$', s):
+        pass
+    else:
+        # Lógica para adivinhar o formato baseado no último separador
+        last_dot = s.rfind('.')
+        last_comma = s.rfind(',')
+        
+        # Se a vírgula vem por último, é provável que seja o decimal (padrão pt-br)
+        if last_comma > last_dot:
+            s = s.replace('.', '').replace(',', '.')
+        # Se o ponto vem por último (ou não há vírgulas), é provável que ele seja o decimal (padrão en-us)
+        elif last_dot > last_comma:
+            s = s.replace(',', '')
+
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
 
 def format_value_for_pdf(value):
+    """Formata um número para o padrão brasileiro (ex: 500.000,00) de forma manual."""
     numeric_value = parse_value_to_float(value)
     return f'{numeric_value:_.2f}'.replace('.', ',').replace('_', '.')
 
@@ -40,15 +61,12 @@ st.set_page_config(page_title="Gerador de DARF em Lote", layout="centered")
 st.title("🚀 Gerador de DARF em Lote")
 st.write("Esta ferramenta preenche múltiplos DARFs a partir de uma planilha Excel.")
 
-# Nome do arquivo do modelo de DARF que deve estar na mesma pasta no GitHub
 DARF_TEMPLATE_FILENAME = "ModeloDarf.pdf"
 
-# 1. Verifica se o modelo de DARF existe
 if not os.path.exists(DARF_TEMPLATE_FILENAME):
     st.error(f"Erro Crítico: O arquivo modelo '{DARF_TEMPLATE_FILENAME}' não foi encontrado no repositório do aplicativo.")
     st.stop()
 
-# 2. Upload do arquivo Excel (único upload necessário para o usuário)
 st.header("1. Faça o upload da sua planilha Excel")
 uploaded_excel_file = st.file_uploader("Selecione a planilha com os dados dos DARFs", type=["xlsx"])
 
@@ -63,7 +81,6 @@ if uploaded_excel_file:
                 }
                 df = pd.read_excel(uploaded_excel_file)
 
-                # Carrega o modelo de DARF diretamente do arquivo no repositório
                 with open(DARF_TEMPLATE_FILENAME, "rb") as f:
                     pdf_model_data = f.read()
 
@@ -78,15 +95,16 @@ if uploaded_excel_file:
                     reader = PdfReader(io.BytesIO(pdf_model_data))
                     writer = PdfWriter(); writer.append(reader)
                     
+                    # ===== CORREÇÃO PRINCIPAL: REMOÇÃO DOS ESPAÇOS EXTRAS =====
                     data_to_fill = {
                         field_map['Nome/Telefone']: str(row.get('Nome/Telefone', '')),
                         field_map['Período de Apuração']: format_date(row.get('Período de Apuração')),
                         field_map['CNPJ']: format_cpf_cnpj(row.get('CNPJ')),
                         field_map['Código da Receita']: str(int(parse_value_to_float(row.get('Código da Receita', 0)))),
                         field_map['Data de vencimento']: format_date(row.get('Data de vencimento')),
-                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal ')),
-                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros ')),
-                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total '))
+                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal')), # Sem espaço
+                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros')),       # Sem espaço
+                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total'))             # Sem espaço
                     }
                     writer.update_page_form_field_values(writer.pages[0], data_to_fill)
                     
