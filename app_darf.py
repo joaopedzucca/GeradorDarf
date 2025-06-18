@@ -1,4 +1,4 @@
-# --- APLICATIVO GERADOR DE DARF (V9 - MODO DE DEPURAÇÃO) ---
+# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL COM PDF EMBUTIDO) ---
 
 import streamlit as st
 import pandas as pd
@@ -8,52 +8,19 @@ import re
 import os
 import shutil
 
-# --- FUNÇÕES AUXILIARES COM MODO DE DEPURAÇÃO ---
-
-import re
-import pandas as pd
-
+# --- FUNÇÕES AUXILIARES (sem alterações) ---
 def parse_value_to_float(value):
-    """
-    Converte strings como:
-      '1.234,56'  → 1234.56
-      '1234,56'   → 1234.56
-      '1,234.56'  → 1234.56
-      'R$ 1.234'  → 1234.0
-      '1 234,56'  → 1234.56
-    """
-    if pd.isna(value):
-        return 0.0
+    if pd.isna(value): return 0.0
     s = str(value).strip()
-    # tira tudo que não for dígito, ponto ou vírgula
-    s = re.sub(r"[^\d\.,\-]", "", s)
-    # se tiver ponto e vírgula, assume ponto como milhares e vírgula decimal
-    if s.count('.') > 0 and s.count(',') > 0:
-        s = s.replace('.', '').replace(',', '.')
-    # só vírgula → decimal
-    elif s.count(',') > 0:
-        s = s.replace(',', '.')
-    # só ponto → já é decimal/padrão python
-    try:
-        return float(s)
-    except ValueError:
-        return 0.0
+    dots = s.count('.'); commas = s.count(',')
+    if dots >= 1 and commas == 1: s = s.replace('.', '').replace(',', '.')
+    elif commas >= 1: s = s.replace(',', '')
+    try: return float(s)
+    except (ValueError, TypeError): return 0.0
 
 def format_value_for_pdf(value):
-    """
-    Gera string no formato brasileiro:
-      1.234,56
-      12,30
-      0,00
-    """
-    numeric = parse_value_to_float(value)
-    # formata com vírgula decimal e ponto milhar
-    s = f"{numeric:,.2f}"       # ex: '1,234.56'
-    s = s.replace(',', '#')     # '1#234.56'
-    s = s.replace('.', ',')     # '1#234,56'
-    s = s.replace('#', '.')     # '1.234,56'
-    return s
-
+    numeric_value = parse_value_to_float(value)
+    return f'{numeric_value:_.2f}'.replace('.', ',').replace('_', '.')
 
 def format_cpf_cnpj(value):
     s = re.sub(r'\D', '', str(value))
@@ -73,12 +40,15 @@ st.set_page_config(page_title="Gerador de DARF em Lote", layout="centered")
 st.title("🚀 Gerador de DARF em Lote")
 st.write("Esta ferramenta preenche múltiplos DARFs a partir de uma planilha Excel.")
 
+# Nome do arquivo do modelo de DARF que deve estar na mesma pasta no GitHub
 DARF_TEMPLATE_FILENAME = "ModeloDarf.pdf"
 
+# 1. Verifica se o modelo de DARF existe
 if not os.path.exists(DARF_TEMPLATE_FILENAME):
     st.error(f"Erro Crítico: O arquivo modelo '{DARF_TEMPLATE_FILENAME}' não foi encontrado no repositório do aplicativo.")
     st.stop()
 
+# 2. Upload do arquivo Excel (único upload necessário para o usuário)
 st.header("1. Faça o upload da sua planilha Excel")
 uploaded_excel_file = st.file_uploader("Selecione a planilha com os dados dos DARFs", type=["xlsx"])
 
@@ -86,7 +56,6 @@ if uploaded_excel_file:
     if st.button("Gerar DARFs", type="primary", use_container_width=True):
         with st.spinner('Processando... Por favor, aguarde.'):
             try:
-                # O restante do código permanece o mesmo
                 field_map = {
                     'Nome/Telefone': 'Nome', 'Período de Apuração': 'Apuração', 'CNPJ': 'NI',
                     'Código da Receita': 'Receita', 'Data de vencimento': 'Vencimento',
@@ -94,6 +63,7 @@ if uploaded_excel_file:
                 }
                 df = pd.read_excel(uploaded_excel_file)
 
+                # Carrega o modelo de DARF diretamente do arquivo no repositório
                 with open(DARF_TEMPLATE_FILENAME, "rb") as f:
                     pdf_model_data = f.read()
 
@@ -114,9 +84,9 @@ if uploaded_excel_file:
                         field_map['CNPJ']: format_cpf_cnpj(row.get('CNPJ')),
                         field_map['Código da Receita']: str(int(parse_value_to_float(row.get('Código da Receita', 0)))),
                         field_map['Data de vencimento']: format_date(row.get('Data de vencimento')),
-                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal')),
-                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros')),
-                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total'))
+                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal ')),
+                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros ')),
+                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total '))
                     }
                     writer.update_page_form_field_values(writer.pages[0], data_to_fill)
                     
@@ -132,7 +102,7 @@ if uploaded_excel_file:
                 zip_filename = 'DARFs_Preenchidos'
                 shutil.make_archive(zip_filename, 'zip', output_dir)
                 
-                st.success("🎉 Processamento concluído!")
+                st.success("🎉 Todos os DARFs foram gerados com sucesso!")
                 st.balloons()
 
                 with open(f"{zip_filename}.zip", "rb") as fp:
