@@ -1,4 +1,4 @@
-# --- APLICATIVO GERADOR DE DARF (V8 - PARSER DE NÚMEROS APRIMORADO) ---
+# --- APLICATIVO GERADOR DE DARF (V9 - MODO DE DEPURAÇÃO) ---
 
 import streamlit as st
 import pandas as pd
@@ -8,17 +8,19 @@ import re
 import os
 import shutil
 
-# --- FUNÇÕES AUXILIARES ROBUSTAS ---
+# --- FUNÇÕES AUXILIARES COM MODO DE DEPURAÇÃO ---
 
 def parse_value_to_float(value):
     """
-    Função aprimorada para converter de forma robusta diferentes formatos de
-    string ou número para float. Lida com formatos pt-br e en-us.
+    Função aprimorada para converter diferentes formatos de string ou número para float.
+    Com modo de depuração adicionado.
     """
-    if pd.isna(value): return 0.0
+    if pd.isna(value) or str(value).strip() == '':
+        return 0.0
     
     s = str(value).strip()
-    # Se for um número simples sem separadores, não faz nada
+    
+    # Se for um número simples sem separadores (padrão americano ou inteiro), já está pronto
     if re.fullmatch(r'^-?\d+(\.\d+)?$', s):
         pass
     else:
@@ -26,16 +28,21 @@ def parse_value_to_float(value):
         last_dot = s.rfind('.')
         last_comma = s.rfind(',')
         
-        # Se a vírgula vem por último, é provável que seja o decimal (padrão pt-br)
+        # Formato PT-BR: "1.234,56" -> remove pontos, troca vírgula por ponto
         if last_comma > last_dot:
             s = s.replace('.', '').replace(',', '.')
-        # Se o ponto vem por último (ou não há vírgulas), é provável que ele seja o decimal (padrão en-us)
+        # Formato EN-US: "1,234.56" -> remove vírgulas
         elif last_dot > last_comma:
             s = s.replace(',', '')
+        # Formato com apenas vírgulas: "1,234" -> remove vírgulas
+        elif last_comma != -1 and last_dot == -1:
+             s = s.replace(',', '')
 
     try:
         return float(s)
     except (ValueError, TypeError):
+        # MODO DETETIVE: Se a conversão falhar, avisa qual foi o valor problemático.
+        st.warning(f"Aviso de Depuração: Não foi possível converter o valor '{value}' para um número. Ele será tratado como zero.")
         return 0.0
 
 def format_value_for_pdf(value):
@@ -74,6 +81,7 @@ if uploaded_excel_file:
     if st.button("Gerar DARFs", type="primary", use_container_width=True):
         with st.spinner('Processando... Por favor, aguarde.'):
             try:
+                # O restante do código permanece o mesmo
                 field_map = {
                     'Nome/Telefone': 'Nome', 'Período de Apuração': 'Apuração', 'CNPJ': 'NI',
                     'Código da Receita': 'Receita', 'Data de vencimento': 'Vencimento',
@@ -95,16 +103,15 @@ if uploaded_excel_file:
                     reader = PdfReader(io.BytesIO(pdf_model_data))
                     writer = PdfWriter(); writer.append(reader)
                     
-                    # ===== CORREÇÃO PRINCIPAL: REMOÇÃO DOS ESPAÇOS EXTRAS =====
                     data_to_fill = {
                         field_map['Nome/Telefone']: str(row.get('Nome/Telefone', '')),
                         field_map['Período de Apuração']: format_date(row.get('Período de Apuração')),
                         field_map['CNPJ']: format_cpf_cnpj(row.get('CNPJ')),
                         field_map['Código da Receita']: str(int(parse_value_to_float(row.get('Código da Receita', 0)))),
                         field_map['Data de vencimento']: format_date(row.get('Data de vencimento')),
-                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal')), # Sem espaço
-                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros')),       # Sem espaço
-                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total'))             # Sem espaço
+                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal')),
+                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros')),
+                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total'))
                     }
                     writer.update_page_form_field_values(writer.pages[0], data_to_fill)
                     
@@ -120,7 +127,7 @@ if uploaded_excel_file:
                 zip_filename = 'DARFs_Preenchidos'
                 shutil.make_archive(zip_filename, 'zip', output_dir)
                 
-                st.success("🎉 Todos os DARFs foram gerados com sucesso!")
+                st.success("🎉 Processamento concluído!")
                 st.balloons()
 
                 with open(f"{zip_filename}.zip", "rb") as fp:
