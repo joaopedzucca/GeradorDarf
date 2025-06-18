@@ -10,39 +10,36 @@ import shutil
 
 def parse_value_to_float(value):
     """
-    Converte valores como:
-      1234.56, 1.234,56, 1,234.56, 1234,56, 'R$ 1.234', etc → float
+    Função aprimorada para converter de forma robusta diferentes formatos de
+    string ou número para float. Lida com formatos pt-br e en-us.
     """
-    if isinstance(value, (int, float)):
-        return float(value)
-    if pd.isna(value):
-        return 0.0
+    if pd.isna(value): return 0.0
+    
     s = str(value).strip()
-    s = re.sub(r"[^\d,\.\-]", "", s)
-    if "." in s and "," in s:
-        # usa o último como decimal
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    elif "," in s:
-        # só vírgula → decimal
-        s = s.replace(".", "").replace(",", ".")
+    # Se for um número simples sem separadores, não faz nada
+    if re.fullmatch(r'^-?\d+(\.\d+)?$', s):
+        pass
+    else:
+        # Lógica para adivinhar o formato baseado no último separador
+        last_dot = s.rfind('.')
+        last_comma = s.rfind(',')
+        
+        # Se a vírgula vem por último, é provável que seja o decimal (padrão pt-br)
+        if last_comma > last_dot:
+            s = s.replace('.', '').replace(',', '.')
+        # Se o ponto vem por último (ou não há vírgulas), é provável que ele seja o decimal (padrão en-us)
+        elif last_dot > last_comma:
+            s = s.replace(',', '')
+
     try:
         return float(s)
-    except ValueError:
+    except (ValueError, TypeError):
         return 0.0
 
 def format_value_for_pdf(value):
-    """
-    Formata float ou string → '1.234,56' no padrão brasileiro.
-    """
-    num = parse_value_to_float(value)
-    s = f"{num:,.2f}"              # ex: '1,234.56'
-    s = s.replace(",", "#")        # '1#234.56'
-    s = s.replace(".", ",")        # '1#234,56'
-    s = s.replace("#", ".")        # '1.234,56'
-    return s
+    """Formata um número para o padrão brasileiro (ex: 500.000,00) de forma manual."""
+    numeric_value = parse_value_to_float(value)
+    return f'{numeric_value:_.2f}'.replace('.', ',').replace('_', '.')
 def format_cpf_cnpj(value):
     s = re.sub(r'\D', '', str(value))
     if len(s) == 11: return f"{s[:3]}.{s[3:6]}.{s[6:9]}-{s[9:]}"
