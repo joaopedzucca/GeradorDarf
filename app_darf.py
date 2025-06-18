@@ -8,20 +8,41 @@ import re
 import os
 import shutil
 
-# --- FUNÇÕES AUXILIARES (sem alterações) ---
 def parse_value_to_float(value):
-    if pd.isna(value): return 0.0
+    """
+    Converte valores como:
+      1234.56, 1.234,56, 1,234.56, 1234,56, 'R$ 1.234', etc → float
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    if pd.isna(value):
+        return 0.0
     s = str(value).strip()
-    dots = s.count('.'); commas = s.count(',')
-    if dots >= 1 and commas == 1: s = s.replace('.', '').replace(',', '.')
-    elif commas >= 1: s = s.replace(',', '')
-    try: return float(s)
-    except (ValueError, TypeError): return 0.0
+    s = re.sub(r"[^\d,\.\-]", "", s)
+    if "." in s and "," in s:
+        # usa o último como decimal
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        # só vírgula → decimal
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
 
 def format_value_for_pdf(value):
-    numeric_value = parse_value_to_float(value)
-    return f'{numeric_value:_.2f}'.replace('.', ',').replace('_', '.')
-
+    """
+    Formata float ou string → '1.234,56' no padrão brasileiro.
+    """
+    num = parse_value_to_float(value)
+    s = f"{num:,.2f}"              # ex: '1,234.56'
+    s = s.replace(",", "#")        # '1#234.56'
+    s = s.replace(".", ",")        # '1#234,56'
+    s = s.replace("#", ".")        # '1.234,56'
+    return s
 def format_cpf_cnpj(value):
     s = re.sub(r'\D', '', str(value))
     if len(s) == 11: return f"{s[:3]}.{s[3:6]}.{s[6:9]}-{s[9:]}"
