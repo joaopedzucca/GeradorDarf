@@ -1,4 +1,4 @@
-# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL COM PDF EMBUTIDO) ---
+# --- APLICATIVO GERADOR DE DARF (V10 - VERSÃO FINAL "À PROVA DE BALAS") ---
 
 import streamlit as st
 import pandas as pd
@@ -8,38 +8,39 @@ import re
 import os
 import shutil
 
+# --- FUNÇÕES AUXILIARES FINAIS E ROBUSTAS ---
+
 def parse_value_to_float(value):
     """
-    Função aprimorada para converter de forma robusta diferentes formatos de
-    string ou número para float. Lida com formatos pt-br e en-us.
+    Função final, "à prova de balas", para converter qualquer formato de
+    número (pt-br, en-us, com ou sem R$, etc.) para um float.
     """
-    if pd.isna(value): return 0.0
+    if pd.isna(value) or str(value).strip() == '':
+        return 0.0
     
     s = str(value).strip()
-    # Se for um número simples sem separadores, não faz nada
-    if re.fullmatch(r'^-?\d+(\.\d+)?$', s):
-        pass
-    else:
-        # Lógica para adivinhar o formato baseado no último separador
-        last_dot = s.rfind('.')
-        last_comma = s.rfind(',')
-        
-        # Se a vírgula vem por último, é provável que seja o decimal (padrão pt-br)
-        if last_comma > last_dot:
-            s = s.replace('.', '').replace(',', '.')
-        # Se o ponto vem por último (ou não há vírgulas), é provável que ele seja o decimal (padrão en-us)
-        elif last_dot > last_comma:
-            s = s.replace(',', '')
-
+    
+    # Passo 1: Limpa o valor, removendo tudo que não for dígito, vírgula ou sinal de menos.
+    # Isso remove 'R$', espaços, pontos, e caracteres de erro como '#'.
+    s_limpo = re.sub(r'[^\d,-]', '', s)
+    
+    # Passo 2: Substitui a vírgula decimal (padrão pt-br) por um ponto.
+    s_final = s_limpo.replace(',', '.')
+    
     try:
-        return float(s)
+        # Se o valor final estiver vazio (ex: de uma célula com '-'), retorna 0.
+        if not s_final:
+            return 0.0
+        return float(s_final)
     except (ValueError, TypeError):
+        # Se mesmo após a limpeza a conversão falhar, retorna 0 como segurança.
         return 0.0
 
 def format_value_for_pdf(value):
     """Formata um número para o padrão brasileiro (ex: 500.000,00) de forma manual."""
     numeric_value = parse_value_to_float(value)
     return f'{numeric_value:_.2f}'.replace('.', ',').replace('_', '.')
+
 def format_cpf_cnpj(value):
     s = re.sub(r'\D', '', str(value))
     if len(s) == 11: return f"{s[:3]}.{s[3:6]}.{s[6:9]}-{s[9:]}"
@@ -58,15 +59,12 @@ st.set_page_config(page_title="Gerador de DARF em Lote", layout="centered")
 st.title("🚀 Gerador de DARF em Lote")
 st.write("Esta ferramenta preenche múltiplos DARFs a partir de uma planilha Excel.")
 
-# Nome do arquivo do modelo de DARF que deve estar na mesma pasta no GitHub
 DARF_TEMPLATE_FILENAME = "ModeloDarf.pdf"
 
-# 1. Verifica se o modelo de DARF existe
 if not os.path.exists(DARF_TEMPLATE_FILENAME):
-    st.error(f"Erro Crítico: O arquivo modelo '{DARF_TEMPLATE_FILENAME}' não foi encontrado no repositório do aplicativo.")
+    st.error(f"Erro Crítico: O arquivo modelo '{DARF_TEMPLATE_FILENAME}' não foi encontrado. Por favor, faça o upload dele para o repositório do GitHub junto com o 'app.py'.")
     st.stop()
 
-# 2. Upload do arquivo Excel (único upload necessário para o usuário)
 st.header("1. Faça o upload da sua planilha Excel")
 uploaded_excel_file = st.file_uploader("Selecione a planilha com os dados dos DARFs", type=["xlsx"])
 
@@ -81,7 +79,6 @@ if uploaded_excel_file:
                 }
                 df = pd.read_excel(uploaded_excel_file)
 
-                # Carrega o modelo de DARF diretamente do arquivo no repositório
                 with open(DARF_TEMPLATE_FILENAME, "rb") as f:
                     pdf_model_data = f.read()
 
@@ -96,15 +93,16 @@ if uploaded_excel_file:
                     reader = PdfReader(io.BytesIO(pdf_model_data))
                     writer = PdfWriter(); writer.append(reader)
                     
+                    # ===== CORREÇÃO FINAL: ESPAÇOS MANTIDOS COMO SOLICITADO =====
                     data_to_fill = {
                         field_map['Nome/Telefone']: str(row.get('Nome/Telefone', '')),
                         field_map['Período de Apuração']: format_date(row.get('Período de Apuração')),
                         field_map['CNPJ']: format_cpf_cnpj(row.get('CNPJ')),
                         field_map['Código da Receita']: str(int(parse_value_to_float(row.get('Código da Receita', 0)))),
                         field_map['Data de vencimento']: format_date(row.get('Data de vencimento')),
-                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal ')),
-                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros ')),
-                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total '))
+                        field_map['Valor do principal']: format_value_for_pdf(row.get('Valor do principal ')), # Espaço mantido
+                        field_map['Valor dos juros']: format_value_for_pdf(row.get('Valor dos juros ')),       # Espaço mantido
+                        field_map['Valor Total']: format_value_for_pdf(row.get('Valor Total '))             # Espaço mantido
                     }
                     writer.update_page_form_field_values(writer.pages[0], data_to_fill)
                     
@@ -132,5 +130,5 @@ if uploaded_excel_file:
                         use_container_width=True
                     )
             except Exception as e:
-                st.error(f"Ocorreu um erro: {e}")
-                st.error("Verifique se os nomes das colunas na sua planilha Excel estão corretos e tente novamente.")
+                st.error(f"Ocorreu um erro inesperado: {e}")
+                st.error("Dica: Verifique se os nomes das colunas na sua planilha Excel estão exatamente como o esperado (incluindo possíveis espaços no final).")
