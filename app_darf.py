@@ -10,45 +10,50 @@ import shutil
 
 # --- FUNÇÕES AUXILIARES COM MODO DE DEPURAÇÃO ---
 
+import re
+import pandas as pd
+
 def parse_value_to_float(value):
     """
-    Função aprimorada para converter diferentes formatos de string ou número para float.
-    Com modo de depuração adicionado.
+    Converte strings como:
+      '1.234,56'  → 1234.56
+      '1234,56'   → 1234.56
+      '1,234.56'  → 1234.56
+      'R$ 1.234'  → 1234.0
+      '1 234,56'  → 1234.56
     """
-    if pd.isna(value) or str(value).strip() == '':
+    if pd.isna(value):
         return 0.0
-    
     s = str(value).strip()
-    
-    # Se for um número simples sem separadores (padrão americano ou inteiro), já está pronto
-    if re.fullmatch(r'^-?\d+(\.\d+)?$', s):
-        pass
-    else:
-        # Lógica para adivinhar o formato baseado no último separador
-        last_dot = s.rfind('.')
-        last_comma = s.rfind(',')
-        
-        # Formato PT-BR: "1.234,56" -> remove pontos, troca vírgula por ponto
-        if last_comma > last_dot:
-            s = s.replace('.', '').replace(',', '.')
-        # Formato EN-US: "1,234.56" -> remove vírgulas
-        elif last_dot > last_comma:
-            s = s.replace(',', '')
-        # Formato com apenas vírgulas: "1,234" -> remove vírgulas
-        elif last_comma != -1 and last_dot == -1:
-             s = s.replace(',', '')
-
+    # tira tudo que não for dígito, ponto ou vírgula
+    s = re.sub(r"[^\d\.,\-]", "", s)
+    # se tiver ponto e vírgula, assume ponto como milhares e vírgula decimal
+    if s.count('.') > 0 and s.count(',') > 0:
+        s = s.replace('.', '').replace(',', '.')
+    # só vírgula → decimal
+    elif s.count(',') > 0:
+        s = s.replace(',', '.')
+    # só ponto → já é decimal/padrão python
     try:
         return float(s)
-    except (ValueError, TypeError):
-        # MODO DETETIVE: Se a conversão falhar, avisa qual foi o valor problemático.
-        st.warning(f"Aviso de Depuração: Não foi possível converter o valor '{value}' para um número. Ele será tratado como zero.")
+    except ValueError:
         return 0.0
 
 def format_value_for_pdf(value):
-    """Formata um número para o padrão brasileiro (ex: 500.000,00) de forma manual."""
-    numeric_value = parse_value_to_float(value)
-    return f'{numeric_value:_.2f}'.replace('.', ',').replace('_', '.')
+    """
+    Gera string no formato brasileiro:
+      1.234,56
+      12,30
+      0,00
+    """
+    numeric = parse_value_to_float(value)
+    # formata com vírgula decimal e ponto milhar
+    s = f"{numeric:,.2f}"       # ex: '1,234.56'
+    s = s.replace(',', '#')     # '1#234.56'
+    s = s.replace('.', ',')     # '1#234,56'
+    s = s.replace('#', '.')     # '1.234,56'
+    return s
+
 
 def format_cpf_cnpj(value):
     s = re.sub(r'\D', '', str(value))
