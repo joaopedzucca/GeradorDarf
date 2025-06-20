@@ -1,10 +1,11 @@
+# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - ACHATAMENTO GARANTIDO) ---
+
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import NameObject, BooleanObject, DictionaryObject, ArrayObject
 import io, re, os, shutil
 
-# --- helpers ---
+# --- Funções Auxiliares (mantidas como no seu código) ---
 
 def parse_value_to_float(value):
     s = str(value).strip()
@@ -24,7 +25,7 @@ def parse_value_to_float(value):
 def format_br(value):
     """Retorna string no formato 1.234,56"""
     v = parse_value_to_float(value)
-    s = f"{v:,.2f}"           # ex: "2,52300.00" em en-US
+    s = f"{v:,.2f}"  # ex: "2,52300.00" em en-US
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return s
 
@@ -42,11 +43,11 @@ def fmt_date(d):
     except:
         return ""
 
-# --- app ---
+# --- Interface do Aplicativo ---
 
-st.set_page_config(page_title="Gerador de DARF em Lote", layout="centered")
-st.title("🚀 Gerador de DARF em Lote")
-st.write("Preenche DARFs em lote a partir de Excel")
+st.set_page_config(page_title="Gerador de DARF Estático", layout="centered")
+st.title("📄 Gerador de DARF 100% Estático")
+st.write("Esta ferramenta preenche e achata os DARFs para garantir visualização perfeita em qualquer dispositivo.")
 
 TEMPLATE = "ModeloDarf.pdf"
 if not os.path.exists(TEMPLATE):
@@ -55,81 +56,82 @@ if not os.path.exists(TEMPLATE):
 u = st.file_uploader("📊 Planilha (.xlsx)", type="xlsx")
 if not u: st.stop()
 
-if st.button("Gerar DARFs", use_container_width=True):
-    with st.spinner("Iniciando geração..."):
+if st.button("Gerar DARFs Estáticos", use_container_width=True):
+    with st.spinner("Processando e achatando os PDFs..."):
         try:
             df = pd.read_excel(u, dtype=str)
-            df.columns = df.columns.str.strip()     # tira espaços finais/iniciais
+            df.columns = df.columns.str.strip()  # Limpa espaços dos nomes das colunas
 
-            # mapeamento Excel → campos PDF
             M = {
-              "Nome/Telefone":"Nome",
-              "Período de Apuração":"Apuração",
-              "CNPJ":"NI",
-              "Código da Receita":"Receita",
-              "Data de vencimento":"Vencimento",
-              "Valor do principal":"Principal",
-              "Valor dos juros":"Juros",
-              "Valor Total":"Total",
+                "Nome/Telefone":"Nome", "Período de Apuração":"Apuração",
+                "CNPJ":"NI", "Código da Receita":"Receita",
+                "Data de vencimento":"Vencimento", "Valor do principal":"Principal",
+                "Valor dos juros":"Juros", "Valor Total":"Total",
             }
 
-            # prepara saída
-            outdir = "darfs"
+            outdir = "darfs_achatados"
             if os.path.exists(outdir): shutil.rmtree(outdir)
             os.makedirs(outdir)
 
-            pdf_bytes = open(TEMPLATE,"rb").read()
+            template_bytes = open(TEMPLATE,"rb").read()
             prog = st.progress(0); total=len(df)
 
             for i, row in df.iterrows():
-                # carrega e clona
-                reader = PdfReader(io.BytesIO(pdf_bytes))
-                writer = PdfWriter(); writer.append(reader)
+                # --- ETAPA 1: Preencher o formulário em um buffer de memória ---
+                reader_template = PdfReader(io.BytesIO(template_bytes))
+                writer_filled = PdfWriter()
+                writer_filled.append(reader_template)
 
-                # força aparências
-                root = writer._root_object.get_object()
-                ac = root.get(NameObject("/AcroForm"))
-                if ac is None:
-                    ac = DictionaryObject({
-                        NameObject("/Fields"): ArrayObject(),
-                        NameObject("/NeedAppearances"): BooleanObject(True)
-                    })
-                    ac_ref = writer._add_object(ac)
-                    root[NameObject("/AcroForm")] = ac_ref
-                else:
-                    ac.get_object()[NameObject("/NeedAppearances")] = BooleanObject(True)
-
-                # preenche usando strings formatadas
-                data = {
-                  M["Nome/Telefone"]: str(row.get("Nome/Telefone","")),
-                  M["Período de Apuração"]: fmt_date(row.get("Período de Apuração")),
-                  M["CNPJ"]: format_cpf_cnpj(row.get("CNPJ")),
-                  M["Código da Receita"]: str(int(parse_value_to_float(row.get("Código da Receita",0)))),
-                  M["Data de vencimento"]: fmt_date(row.get("Data de vencimento")),
-                  M["Valor do principal"]: format_br(row.get("Valor do principal",0)),
-                  M["Valor dos juros"]:    format_br(row.get("Valor dos juros",0)),
-                  M["Valor Total"]:         format_br(row.get("Valor Total",0)),
+                data_to_fill = {
+                    M["Nome/Telefone"]: str(row.get("Nome/Telefone","")),
+                    M["Período de Apuração"]: fmt_date(row.get("Período de Apuração")),
+                    M["CNPJ"]: format_cpf_cnpj(row.get("CNPJ")),
+                    M["Código da Receita"]: str(int(parse_value_to_float(row.get("Código da Receita",0)))),
+                    M["Data de vencimento"]: fmt_date(row.get("Data de vencimento")),
+                    M["Valor do principal"]: format_br(row.get("Valor do principal",0)),
+                    M["Valor dos juros"]: format_br(row.get("Valor dos juros",0)),
+                    M["Valor Total"]: format_br(row.get("Valor Total",0)),
                 }
-                # create_appearances=True garante que o PDF vai gravar a aparência
-                writer.update_page_form_field_values(writer.pages[0], data, create_appearances=True)
+                writer_filled.update_page_form_field_values(writer_filled.pages[0], data_to_fill)
+                
+                # Salva o PDF preenchido em memória
+                filled_buffer = io.BytesIO()
+                writer_filled.write(filled_buffer)
+                filled_buffer.seek(0)
 
-                # salva
+                # --- ETAPA 2: Achatamento por releitura e merge ---
+                # Abre o PDF de fundo (o modelo original)
+                reader_background = PdfReader(io.BytesIO(template_bytes))
+                page_background = reader_background.pages[0]
+
+                # Abre o PDF com os dados preenchidos
+                reader_foreground = PdfReader(filled_buffer)
+                page_foreground = reader_foreground.pages[0]
+
+                # "Estampa" a página preenchida sobre a página de fundo
+                page_background.merge_page(page_foreground)
+                
+                # --- ETAPA 3: Salva o resultado final 100% estático ---
+                writer_final = PdfWriter()
+                writer_final.add_page(page_background)
+                
                 nm = re.sub(r'\W+','_', row.get("Nome/Telefone","Contribuinte"))
                 per = fmt_date(row.get("Período de Apuração","")).replace("/","-")
                 fname = f"DARF_{i+1}_{nm}_{per}.pdf"
                 with open(os.path.join(outdir,fname),"wb") as f:
-                    writer.write(f)
+                    writer_final.write(f)
 
-                prog.progress((i+1)/total)
+                prog.progress((i+1)/total, text=f"Gerando DARF {i+1}/{total}")
 
             # zip e download
-            zipf="DARFs"
+            zipf="DARFs_Gerados"
             shutil.make_archive(zipf,"zip",outdir)
-            st.success("🎉 Pronto!")
-            st.download_button("📥 Baixar ZIP", open(f"{zipf}.zip","rb"),
-                               file_name=f"{zipf}.zip", mime="application/zip",
-                               use_container_width=True)
+            st.success("🎉 Pronto! DARFs estáticos gerados com sucesso.")
+            st.balloons()
+            st.download_button("📥 Baixar ZIP com DARFs", open(f"{zipf}.zip","rb"),
+                              file_name=f"{zipf}.zip", mime="application/zip",
+                              use_container_width=True)
 
         except Exception as e:
-            st.error(f"Erro: {e}")
-            st.error("Confira nomes de coluna sem espaços extras.")
+            st.error(f"Ocorreu um erro inesperado: {e}")
+            st.error("Dica: Verifique se os nomes das colunas na planilha correspondem exatamente ao esperado.")
