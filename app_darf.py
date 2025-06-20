@@ -1,15 +1,15 @@
-# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - COMPATÍVEL COM STREAMLIT CLOUD) ---
+# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - CORREÇÃO DE IMPORT) ---
 
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader, PdfWriter
 import io, re, os, shutil
 
-# --- NOVAS BIBLIOTECAS PARA DESENHO ---
+# --- BIBLIOTECAS PARA DESENHO ---
 from reportlab.pdfgen import canvas
-from reportlab.lib.units import pt
+# A LINHA 'from reportlab.lib.units import pt' FOI REMOVIDA POIS NÃO ERA UTILIZADA
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont # Mantém a importação
+from reportlab.pdfbase.ttfonts import TTFont
 
 # --- Funções Auxiliares (sem alterações) ---
 def parse_value_to_float(value):
@@ -54,27 +54,22 @@ st.title("🎯 Gerador de DARF por Desenho de Precisão")
 st.write("Esta ferramenta desenha os dados diretamente no PDF para um resultado perfeito.")
 
 TEMPLATE = "ModeloDarf.pdf"
-if not os.path.exists(TEMPLATE):
-    st.error(f"Modelo '{TEMPLATE}' não encontrado."); st.stop()
-
-# --- ALTERAÇÃO CRÍTICA PARA O STREAMLIT CLOUD ---
-# Verifica se o arquivo da fonte existe e o registra.
-# Isso torna o app autossuficiente.
 FONT_FILE = "Helvetica.ttf"
-if os.path.exists(FONT_FILE):
-    pdfmetrics.registerFont(TTFont('Helv', FONT_FILE))
-else:
-    st.error(f"ERRO CRÍTICO: O arquivo da fonte '{FONT_FILE}' não foi encontrado.")
-    st.error("Por favor, faça o upload do arquivo 'Helvetica.ttf' para o seu repositório do GitHub.")
-    st.stop()
 
+# Verifica se os arquivos essenciais existem
+if not os.path.exists(TEMPLATE):
+    st.error(f"ERRO CRÍTICO: Modelo '{TEMPLATE}' não encontrado no repositório."); st.stop()
+if not os.path.exists(FONT_FILE):
+    st.error(f"ERRO CRÍTICO: Fonte '{FONT_FILE}' não encontrada no repositório."); st.stop()
+
+# Registra a fonte para uso no ReportLab
+pdfmetrics.registerFont(TTFont('Helv', FONT_FILE))
 
 u = st.file_uploader("📊 Planilha (.xlsx)", type="xlsx")
 if not u: st.stop()
 
-if st.button("Gerar DARFs por Desenho", use_container_width=True):
+if st.button("Gerar DARFs Finais", use_container_width=True):
     with st.spinner("Desenhando os DARFs com precisão..."):
-        # O resto do código permanece exatamente o mesmo
         try:
             df = pd.read_excel(u, dtype=str)
             df.columns = df.columns.str.strip()
@@ -83,12 +78,12 @@ if st.button("Gerar DARFs por Desenho", use_container_width=True):
             if os.path.exists(outdir): shutil.rmtree(outdir)
             os.makedirs(outdir)
 
-            template_reader = PdfReader(TEMPLATE)
-            template_page = template_reader.pages[0]
-
-            prog = st.progress(0); total=len(df)
+            prog = st.progress(0, text="Iniciando..."); total=len(df)
 
             for i, row in df.iterrows():
+                template_reader = PdfReader(TEMPLATE)
+                template_page = template_reader.pages[0]
+                
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=template_page.mediabox.upper_right)
                 can.setFont('Helv', 10)
@@ -126,7 +121,6 @@ if st.button("Gerar DARFs por Desenho", use_container_width=True):
                 with open(os.path.join(outdir, fname), "wb") as f:
                     writer.write(f)
 
-                template_page = PdfReader(TEMPLATE).pages[0]
                 prog.progress((i+1)/total)
 
             zipf="DARFs_Gerados"
