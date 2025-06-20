@@ -1,4 +1,4 @@
-# --- APLICATIVO GERADOR DE DARF (V15 - ACHATAMENTO ROBUSTO) ---
+# --- APLICATIVO GERADOR DE DARF (V16 - FLATTEN DIRETO) ---
 
 import streamlit as st
 import pandas as pd
@@ -99,7 +99,10 @@ if uploaded_excel_file:
                 total_rows = len(df)
 
                 for index, row in df.iterrows():
-                    # Prepara os dados para preenchimento
+                    reader = PdfReader(io.BytesIO(pdf_model_data))
+                    writer = PdfWriter()
+                    writer.append(reader)
+
                     data_to_fill = {
                         field_map['Nome/Telefone']: str(get_safe_value(row, 'Nome/Telefone')),
                         field_map['Período de Apuração']: format_date(get_safe_value(row, 'Período de Apuração')),
@@ -110,34 +113,19 @@ if uploaded_excel_file:
                         field_map['Valor dos juros']: format_value_for_pdf(get_safe_value(row, 'Valor dos juros ')),
                         field_map['Valor Total']: format_value_for_pdf(get_safe_value(row, 'Valor Total '))
                     }
-
-                    # --- LÓGICA DE ACHATAMENTO (FLATTEN) ---
-
-                    # ETAPA 1: Preenche o formulário e salva em uma memória temporária
-                    writer_form = PdfWriter()
-                    reader_template = PdfReader(io.BytesIO(pdf_model_data))
-                    writer_form.append(reader_template)
-                    writer_form.update_page_form_field_values(writer_form.pages[0], data_to_fill)
-
-                    filled_buffer = io.BytesIO()
-                    writer_form.write(filled_buffer)
-                    filled_buffer.seek(0)
-
-                    # ETAPA 2: Lê o PDF preenchido e "achata" os campos, tornando-os estáticos
-                    reader_filled = PdfReader(filled_buffer)
-                    writer_flat = PdfWriter()
-                    for page in reader_filled.pages:
-                        page.flatten_fields()  # A mágica acontece aqui!
-                        writer_flat.add_page(page)
-
-                    # ETAPA 3: Salva o PDF final, agora achatado
+                    
+                    # --- A MÁGICA ACONTECE AQUI ---
+                    # Preenche os campos e os "achata" em uma única operação.
+                    writer.update_page_form_field_values(
+                        writer.pages[0], data_to_fill, flatten=True
+                    )
+                    
                     contribuinte_nome = re.sub(r'\W+', '_', str(get_safe_value(row, 'Nome/Telefone', 'Contribuinte')))
                     periodo = format_date(get_safe_value(row, 'Período de Apuração')).replace('/', '-')
                     output_filename = f"DARF_{index+1}_{contribuinte_nome}_{periodo}.pdf"
-                    final_pdf_path = os.path.join(output_dir, output_filename)
                     
-                    with open(final_pdf_path, "wb") as f:
-                        writer_flat.write(f)
+                    with open(os.path.join(output_dir, output_filename), "wb") as output_stream:
+                        writer.write(output_stream)
 
                     progress_bar.progress((index + 1) / total_rows, text=f"Gerando DARF {index + 1}/{total_rows}")
 
