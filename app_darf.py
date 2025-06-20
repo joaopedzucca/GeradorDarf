@@ -1,4 +1,4 @@
-# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - DESENHO PRECISO) ---
+# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - COMPATÍVEL COM STREAMLIT CLOUD) ---
 
 import streamlit as st
 import pandas as pd
@@ -9,10 +9,9 @@ import io, re, os, shutil
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import pt
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.ttfonts import TTFont # Mantém a importação
 
-# --- Funções Auxiliares (mantidas como no seu código) ---
-
+# --- Funções Auxiliares (sem alterações) ---
 def parse_value_to_float(value):
     s = str(value).strip()
     if not s or s.lower() == 'nan': return 0.0
@@ -40,19 +39,13 @@ def fmt_date(d):
     try: return pd.to_datetime(d).strftime("%d/%m/%Y")
     except: return ""
 
-# --- COORDENADAS EXTRAÍDAS DO SEU PDF ---
-# [x_inferior_esquerdo, y_inferior_esquerdo, x_superior_direito, y_superior_direito]
+# --- COORDENADAS EXTRAÍDAS ---
 COORDINATES = {
-    'Nome': [45.35, 603.11, 303.30, 625.78],
-    'Apuração': [425.85, 698.52, 561.91, 721.19],
-    'NI': [425.85, 674.67, 561.91, 697.34],
-    'Receita': [425.85, 650.82, 561.91, 673.49],
-    'Referência': [425.85, 626.97, 561.91, 649.64],
-    'Vencimento': [425.85, 603.12, 561.91, 625.79],
-    'Principal': [425.85, 579.27, 561.91, 601.94],
-    'Multa': [425.85, 555.42, 561.91, 578.09],
-    'Juros': [425.85, 531.57, 561.91, 554.24],
-    'Total': [425.85, 507.62, 561.91, 530.30],
+    'Nome': [45.35, 603.11, 303.30, 625.78], 'Apuração': [425.85, 698.52, 561.91, 721.19],
+    'NI': [425.85, 674.67, 561.91, 697.34], 'Receita': [425.85, 650.82, 561.91, 673.49],
+    'Referência': [425.85, 626.97, 561.91, 649.64], 'Vencimento': [425.85, 603.12, 561.91, 625.79],
+    'Principal': [425.85, 579.27, 561.91, 601.94], 'Multa': [425.85, 555.42, 561.91, 578.09],
+    'Juros': [425.85, 531.57, 561.91, 554.24], 'Total': [425.85, 507.62, 561.91, 530.30],
 }
 
 # --- Interface do Aplicativo ---
@@ -64,14 +57,24 @@ TEMPLATE = "ModeloDarf.pdf"
 if not os.path.exists(TEMPLATE):
     st.error(f"Modelo '{TEMPLATE}' não encontrado."); st.stop()
 
-# Registra a fonte Helvetica padrão para uso no ReportLab
-pdfmetrics.registerFont(TTFont('Helv', 'Helvetica.ttf'))
+# --- ALTERAÇÃO CRÍTICA PARA O STREAMLIT CLOUD ---
+# Verifica se o arquivo da fonte existe e o registra.
+# Isso torna o app autossuficiente.
+FONT_FILE = "Helvetica.ttf"
+if os.path.exists(FONT_FILE):
+    pdfmetrics.registerFont(TTFont('Helv', FONT_FILE))
+else:
+    st.error(f"ERRO CRÍTICO: O arquivo da fonte '{FONT_FILE}' não foi encontrado.")
+    st.error("Por favor, faça o upload do arquivo 'Helvetica.ttf' para o seu repositório do GitHub.")
+    st.stop()
+
 
 u = st.file_uploader("📊 Planilha (.xlsx)", type="xlsx")
 if not u: st.stop()
 
 if st.button("Gerar DARFs por Desenho", use_container_width=True):
     with st.spinner("Desenhando os DARFs com precisão..."):
+        # O resto do código permanece exatamente o mesmo
         try:
             df = pd.read_excel(u, dtype=str)
             df.columns = df.columns.str.strip()
@@ -87,49 +90,33 @@ if st.button("Gerar DARFs por Desenho", use_container_width=True):
 
             for i, row in df.iterrows():
                 packet = io.BytesIO()
-                # Cria a "folha de rascunho" transparente (canvas)
                 can = canvas.Canvas(packet, pagesize=template_page.mediabox.upper_right)
-                can.setFont('Helv', 10) # Define a fonte e tamanho exatos do original
+                can.setFont('Helv', 10)
 
-                # Dicionário de dados formatados
                 data = {
-                    "Nome": str(row.get("Nome/Telefone", "")),
-                    "Apuração": fmt_date(row.get("Período de Apuração")),
-                    "NI": format_cpf_cnpj(row.get("CNPJ")),
-                    "Receita": str(int(parse_value_to_float(row.get("Código da Receita", 0)))),
-                    "Vencimento": fmt_date(row.get("Data de vencimento")),
-                    "Principal": format_br(row.get("Valor do principal", 0)),
-                    "Juros": format_br(row.get("Valor dos juros", 0)),
-                    "Total": format_br(row.get("Valor Total", 0)),
-                    "Referência": str(row.get("Número de Referência", "")),
-                    "Multa": format_br(row.get("Valor da multa",0))
+                    "Nome": str(row.get("Nome/Telefone", "")), "Apuração": fmt_date(row.get("Período de Apuração")),
+                    "NI": format_cpf_cnpj(row.get("CNPJ")), "Receita": str(int(parse_value_to_float(row.get("Código da Receita", 0)))),
+                    "Vencimento": fmt_date(row.get("Data de vencimento")), "Principal": format_br(row.get("Valor do principal", 0)),
+                    "Juros": format_br(row.get("Valor dos juros", 0)), "Total": format_br(row.get("Valor Total", 0)),
+                    "Referência": str(row.get("Número de Referência", "")), "Multa": format_br(row.get("Valor da multa",0))
                 }
                 
-                # Desenha cada informação no canvas
                 for field_name, text in data.items():
-                    if field_name in COORDINATES:
+                    if field_name in COORDINATES and text:
                         coords = COORDINATES[field_name]
                         x0, y0, x1, y1 = coords
-                        
-                        # Calcula uma posição Y verticalmente centralizada
                         y_pos = y0 + 4 
-
-                        if field_name == 'Nome': # Alinhamento à esquerda
+                        if field_name == 'Nome':
                             can.drawString(x0 + 2, y_pos, text)
-                        else: # Alinhamento à direita
+                        else:
                             can.drawRightString(x1 - 2, y_pos, text)
 
-                can.save() # Salva o canvas
+                can.save()
                 packet.seek(0)
                 
-                # Lê o canvas que acabamos de criar
                 overlay_reader = PdfReader(packet)
-                overlay_page = overlay_reader.pages[0]
+                template_page.merge_page(overlay_reader.pages[0])
 
-                # Estampa o canvas sobre a página do modelo
-                template_page.merge_page(overlay_page)
-
-                # Salva o resultado
                 writer = PdfWriter()
                 writer.add_page(template_page)
                 
@@ -139,7 +126,6 @@ if st.button("Gerar DARFs por Desenho", use_container_width=True):
                 with open(os.path.join(outdir, fname), "wb") as f:
                     writer.write(f)
 
-                # Reseta a página do template para a próxima iteração
                 template_page = PdfReader(TEMPLATE).pages[0]
                 prog.progress((i+1)/total)
 
@@ -153,4 +139,3 @@ if st.button("Gerar DARFs por Desenho", use_container_width=True):
 
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado: {e}")
-            st.info("Dica: Verifique se a biblioteca 'reportlab' está instalada (`pip install reportlab`).")
