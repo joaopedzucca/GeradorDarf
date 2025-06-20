@@ -1,8 +1,10 @@
-# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - ACHATAMENTO GARANTIDO) ---
+# --- APLICATIVO GERADOR DE DARF (V18 - ALINHAMENTO E ACHATAMENTO DEFINITIVO) ---
 
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader, PdfWriter
+# Importa os objetos necessários para a manipulação de baixo nível do PDF
+from pypdf.generic import NameObject, NumberObject 
 import io, re, os, shutil
 
 # --- Funções Auxiliares (mantidas como no seu código) ---
@@ -25,7 +27,7 @@ def parse_value_to_float(value):
 def format_br(value):
     """Retorna string no formato 1.234,56"""
     v = parse_value_to_float(value)
-    s = f"{v:,.2f}"  # ex: "2,52300.00" em en-US
+    s = f"{v:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return s
 
@@ -46,8 +48,8 @@ def fmt_date(d):
 # --- Interface do Aplicativo ---
 
 st.set_page_config(page_title="Gerador de DARF Estático", layout="centered")
-st.title("📄 Gerador de DARF 100% Estático")
-st.write("Esta ferramenta preenche e achata os DARFs para garantir visualização perfeita em qualquer dispositivo.")
+st.title("📄 Gerador de DARF 100% Estático e Alinhado")
+st.write("Esta ferramenta garante o alinhamento à direita dos valores e um PDF final totalmente travado.")
 
 TEMPLATE = "ModeloDarf.pdf"
 if not os.path.exists(TEMPLATE):
@@ -56,11 +58,11 @@ if not os.path.exists(TEMPLATE):
 u = st.file_uploader("📊 Planilha (.xlsx)", type="xlsx")
 if not u: st.stop()
 
-if st.button("Gerar DARFs Estáticos", use_container_width=True):
-    with st.spinner("Processando e achatando os PDFs..."):
+if st.button("Gerar DARFs Finais", use_container_width=True):
+    with st.spinner("Alinhando, preenchendo e achatando os PDFs..."):
         try:
             df = pd.read_excel(u, dtype=str)
-            df.columns = df.columns.str.strip()  # Limpa espaços dos nomes das colunas
+            df.columns = df.columns.str.strip()
 
             M = {
                 "Nome/Telefone":"Nome", "Período de Apuração":"Apuração",
@@ -68,19 +70,34 @@ if st.button("Gerar DARFs Estáticos", use_container_width=True):
                 "Data de vencimento":"Vencimento", "Valor do principal":"Principal",
                 "Valor dos juros":"Juros", "Valor Total":"Total",
             }
+            
+            # Lista dos campos que devem ser alinhados à direita
+            campos_numericos = [M["Valor do principal"], M["Valor dos juros"], M["Valor Total"]]
 
-            outdir = "darfs_achatados"
+            outdir = "darfs_finais"
             if os.path.exists(outdir): shutil.rmtree(outdir)
             os.makedirs(outdir)
 
             template_bytes = open(TEMPLATE,"rb").read()
-            prog = st.progress(0); total=len(df)
+            prog = st.progress(0, text="Iniciando..."); total=len(df)
 
             for i, row in df.iterrows():
-                # --- ETAPA 1: Preencher o formulário em um buffer de memória ---
+                prog.progress((i+1)/total, text=f"Processando DARF {i+1}/{total}...")
+                
+                # --- ETAPA 1: Preencher o formulário em memória com alinhamento forçado ---
                 reader_template = PdfReader(io.BytesIO(template_bytes))
                 writer_filled = PdfWriter()
                 writer_filled.append(reader_template)
+
+                # Loop para forçar alinhamento à direita nos campos numéricos
+                for page in writer_filled.pages:
+                    if "/Annots" in page:
+                        for annot in page["/Annots"]:
+                            field = annot.get_object()
+                            if field.get("/T") in campos_numericos:
+                                field.update({
+                                    NameObject("/Q"): NumberObject(2)  # 0=esquerda, 1=centro, 2=direita
+                                })
 
                 data_to_fill = {
                     M["Nome/Telefone"]: str(row.get("Nome/Telefone","")),
@@ -94,21 +111,17 @@ if st.button("Gerar DARFs Estáticos", use_container_width=True):
                 }
                 writer_filled.update_page_form_field_values(writer_filled.pages[0], data_to_fill)
                 
-                # Salva o PDF preenchido em memória
                 filled_buffer = io.BytesIO()
                 writer_filled.write(filled_buffer)
                 filled_buffer.seek(0)
 
-                # --- ETAPA 2: Achatamento por releitura e merge ---
-                # Abre o PDF de fundo (o modelo original)
+                # --- ETAPA 2: Achatamento por releitura e "estampa" (merge) ---
                 reader_background = PdfReader(io.BytesIO(template_bytes))
                 page_background = reader_background.pages[0]
 
-                # Abre o PDF com os dados preenchidos
                 reader_foreground = PdfReader(filled_buffer)
                 page_foreground = reader_foreground.pages[0]
 
-                # "Estampa" a página preenchida sobre a página de fundo
                 page_background.merge_page(page_foreground)
                 
                 # --- ETAPA 3: Salva o resultado final 100% estático ---
@@ -121,12 +134,10 @@ if st.button("Gerar DARFs Estáticos", use_container_width=True):
                 with open(os.path.join(outdir,fname),"wb") as f:
                     writer_final.write(f)
 
-                prog.progress((i+1)/total, text=f"Gerando DARF {i+1}/{total}")
-
             # zip e download
             zipf="DARFs_Gerados"
             shutil.make_archive(zipf,"zip",outdir)
-            st.success("🎉 Pronto! DARFs estáticos gerados com sucesso.")
+            st.success("🎉 Pronto! DARFs finais gerados com sucesso.")
             st.balloons()
             st.download_button("📥 Baixar ZIP com DARFs", open(f"{zipf}.zip","rb"),
                               file_name=f"{zipf}.zip", mime="application/zip",
