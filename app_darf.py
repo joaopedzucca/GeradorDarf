@@ -1,11 +1,12 @@
-# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - INTERATIVA INTELIGENTE) ---
+# --- APLICATIVO GERADOR DE DARF (VERSÃO FINAL - ESTÁTICO PERFEITO) ---
 
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import NameObject, NumberObject
 import io, re, os, shutil
 
-# --- Funções Auxiliares ---
+# --- Funções Auxiliares (usando suas funções originais que são ótimas) ---
 
 def parse_value_to_float(value):
     s = str(value).strip()
@@ -22,13 +23,12 @@ def parse_value_to_float(value):
     try: return float(s3)
     except: return 0.0
 
-def format_for_js(value):
-    """
-    NOVA FUNÇÃO: Formata o número como um texto simples com ponto decimal,
-    que é o formato que o JavaScript do PDF espera receber. Ex: 1234.50
-    """
+def format_br(value):
+    """Retorna string no formato 1.234,56, que será 'desenhada' no PDF."""
     v = parse_value_to_float(value)
-    return f"{v:.2f}"
+    s = f"{v:,.2f}"
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+    return s
 
 def format_cpf_cnpj(x):
     s = re.sub(r'\D','',str(x))
@@ -46,9 +46,9 @@ def fmt_date(d):
 
 # --- Interface do Aplicativo ---
 
-st.set_page_config(page_title="Gerador de DARF Interativo", layout="centered")
-st.title("📄 Gerador de DARF Interativo Inteligente")
-st.write("Esta ferramenta cria DARFs interativos que usam a formatação nativa do modelo PDF.")
+st.set_page_config(page_title="Gerador de DARF Estático", layout="centered")
+st.title("📄 Gerador de DARF 100% Estático e Formatado")
+st.write("Cria DARFs com formatação e alinhamento perfeitos, travados para visualização universal.")
 
 TEMPLATE = "ModeloDarf.pdf"
 if not os.path.exists(TEMPLATE):
@@ -57,8 +57,8 @@ if not os.path.exists(TEMPLATE):
 u = st.file_uploader("📊 Planilha (.xlsx)", type="xlsx")
 if not u: st.stop()
 
-if st.button("Gerar DARFs Interativos", use_container_width=True):
-    with st.spinner("Gerando DARFs..."):
+if st.button("Gerar DARFs Finais", use_container_width=True):
+    with st.spinner("Formatando, alinhando e travando os PDFs..."):
         try:
             df = pd.read_excel(u, dtype=str)
             df.columns = df.columns.str.strip()
@@ -69,8 +69,10 @@ if st.button("Gerar DARFs Interativos", use_container_width=True):
                 "Data de vencimento":"Vencimento", "Valor do principal":"Principal",
                 "Valor dos juros":"Juros", "Valor Total":"Total",
             }
+            
+            campos_numericos = [M["Valor do principal"], M["Valor dos juros"], M["Valor Total"]]
 
-            outdir = "darfs_interativos"
+            outdir = "darfs_finais_estaticos"
             if os.path.exists(outdir): shutil.rmtree(outdir)
             os.makedirs(outdir)
 
@@ -78,39 +80,56 @@ if st.button("Gerar DARFs Interativos", use_container_width=True):
             prog = st.progress(0, text="Iniciando..."); total=len(df)
 
             for i, row in df.iterrows():
-                prog.progress((i+1)/total, text=f"Gerando DARF {i+1}/{total}...")
+                prog.progress((i+1)/total, text=f"Processando DARF {i+1}/{total}...")
                 
+                # ETAPA 1: Preencher e formatar em memória
                 reader_template = PdfReader(io.BytesIO(template_bytes))
-                writer = PdfWriter()
-                writer.append(reader_template)
-                
-                # Preenchemos os dados usando o formato que o PDF espera
+                writer_filled = PdfWriter()
+                writer_filled.append(reader_template)
+
+                for page in writer_filled.pages:
+                    if "/Annots" in page:
+                        for annot in page["/Annots"]:
+                            field = annot.get_object()
+                            if field.get("/T") in campos_numericos:
+                                field.update({ NameObject("/Q"): NumberObject(2) })
+
                 data_to_fill = {
                     M["Nome/Telefone"]: str(row.get("Nome/Telefone","")),
                     M["Período de Apuração"]: fmt_date(row.get("Período de Apuração")),
                     M["CNPJ"]: format_cpf_cnpj(row.get("CNPJ")),
                     M["Código da Receita"]: str(int(parse_value_to_float(row.get("Código da Receita",0)))),
                     M["Data de vencimento"]: fmt_date(row.get("Data de vencimento")),
-                    # Para valores, usamos a nova função para entregar o dado "cru"
-                    M["Valor do principal"]: format_for_js(row.get("Valor do principal",0)),
-                    M["Valor dos juros"]: format_for_js(row.get("Valor dos juros",0)),
-                    M["Valor Total"]: format_for_js(row.get("Valor Total",0)),
+                    M["Valor do principal"]: format_br(row.get("Valor do principal",0)),
+                    M["Valor dos juros"]: format_br(row.get("Valor dos juros",0)),
+                    M["Valor Total"]: format_br(row.get("Valor Total",0)),
                 }
+                writer_filled.update_page_form_field_values(writer_filled.pages[0], data_to_fill)
+                
+                filled_buffer = io.BytesIO()
+                writer_filled.write(filled_buffer)
+                filled_buffer.seek(0)
 
-                # Simplesmente preenchemos os valores. O PDF fará o resto.
-                # Não usamos mais nenhum tipo de achatamento (flattening).
-                writer.update_page_form_field_values(writer.pages[0], data_to_fill)
+                # ETAPA 2: Achatamento por "Estampa" (merge)
+                reader_background = PdfReader(io.BytesIO(template_bytes))
+                page_background = reader_background.pages[0]
+                reader_foreground = PdfReader(filled_buffer)
+                page_foreground = reader_foreground.pages[0]
+                page_background.merge_page(page_foreground)
+                
+                # ETAPA 3: Salvar o resultado final 100% estático
+                writer_final = PdfWriter()
+                writer_final.add_page(page_background)
                 
                 nm = re.sub(r'\W+','_', row.get("Nome/Telefone","Contribuinte"))
                 per = fmt_date(row.get("Período de Apuração","")).replace("/","-")
                 fname = f"DARF_{i+1}_{nm}_{per}.pdf"
                 with open(os.path.join(outdir,fname),"wb") as f:
-                    writer.write(f)
+                    writer_final.write(f)
 
-            # zip e download
             zipf="DARFs_Gerados"
             shutil.make_archive(zipf,"zip",outdir)
-            st.success("🎉 Pronto! DARFs interativos gerados com sucesso.")
+            st.success("🎉 Pronto! DARFs estáticos e perfeitos gerados.")
             st.balloons()
             st.download_button("📥 Baixar ZIP com DARFs", open(f"{zipf}.zip","rb"),
                               file_name=f"{zipf}.zip", mime="application/zip",
@@ -118,4 +137,3 @@ if st.button("Gerar DARFs Interativos", use_container_width=True):
 
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado: {e}")
-            st.error("Dica: Verifique se os nomes das colunas na planilha correspondem exatamente ao esperado.")
